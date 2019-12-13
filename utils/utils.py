@@ -38,21 +38,13 @@ def set_seeds(seed):
 
 def get_device():
     "get device (CPU or GPU)"
-    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    if torch.cuda.is_available():
-        device = "cuda"
-    else:
-        device = "cpu"
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     n_gpu = torch.cuda.device_count()
     print("%s (%d GPUs)" % (device, n_gpu))
     return device
 
 def _get_device():
-    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    if torch.cuda.is_available():
-        device = "cuda"
-    else:
-        device = "cpu"
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     return device
 
 def split_last(x, shape):

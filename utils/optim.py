@@ -19,7 +19,7 @@
 import math
 import torch
 from torch.optim import Optimizer
-# from torch.nn.utils import clip_grad_norm_
+from torch.nn.utils import clip_grad_norm_
 
 def warmup_cosine(x, warmup=0.002):
     if x < warmup:
@@ -120,28 +120,8 @@ class BertAdam(Optimizer):
                 beta1, beta2 = group['b1'], group['b2']
 
                 # Add grad clipping
-                def clip_grad_own(parameters, max_norm, norm_type=2):
-                    if isinstance(parameters, torch.Tensor):
-                        parameters = [parameters]
-                    parameters = list(filter(lambda p: p.grad is not None, parameters))
-                    max_norm = float(max_norm)
-                    norm_type = float(norm_type)
-                    if norm_type == inf:
-                        total_norm = max(p.grad.data.abs().max() for p in parameters)
-                    else:
-                        total_norm = 0
-                        for p in parameters:
-                            param_norm = p.grad.data.norm(norm_type)
-                            total_norm += param_norm.item() ** norm_type
-                        total_norm = total_norm ** (1. / norm_type)
-                    clip_coef = max_norm / (total_norm + 1e-6)
-                    if clip_coef < 1:
-                        for p in parameters:
-                            p.grad.data.mul_(clip_coef)
-                    return total_norm
-                    
                 if group['max_grad_norm'] > 0:
-                    clip_grad_own(p, group['max_grad_norm'])
+                    clip_grad_norm_(p, group['max_grad_norm'])
 
                 # Decay the first and second moment running average coefficient
                 # In-place operations to update the averages at the same time

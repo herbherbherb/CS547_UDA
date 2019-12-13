@@ -12,8 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import fire
-
+import ast
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -23,7 +22,8 @@ import train
 from load_data import load_data
 from utils.utils import set_seeds, get_device, _get_device, torch_device_one
 from utils import optim, configuration
-import json
+import argparse
+
 
 # TSA
 def get_tsa_thresh(schedule, global_step, num_train_steps, start, end):
@@ -40,34 +40,21 @@ def get_tsa_thresh(schedule, global_step, num_train_steps, start, end):
     return output.to(_get_device())
 
 
-def main(cfg, model_cfg):
+def main(args):
     # Load Configuration
-    print(cfg)
-    print(model_cfg)
-    print("+++++++++++++++++++++++")
-    # cfg = "config/uda.json"
-    # model_cfg = "config/bert_base.json"
-
-    cfg = configuration.params.from_json(cfg)                   # Train or Eval cfg
-    # cfg = json.load(open(cfg, 'r'))
-    print(type(cfg))
-    print(cfg)
-    print("+++++++++++++++++++++++")
-    model_cfg = configuration.model.from_json(model_cfg)        # BERT_cfg
-    # model_cfg = json.load(open(model_cfg, 'r'))   
+    cfg = configuration.params.from_json(args.data)              # Train or Eval cfg
+    model_cfg = configuration.model.from_json(args.model)        # BERT_cfg
     set_seeds(cfg.seed)
 
     # Load Data & Create Criterion
     data = load_data(cfg)
     if cfg.uda_mode:
-        # unsup_criterion = nn.KLDivLoss(reduction='none')
-        unsup_criterion = nn.KLDivLoss()
+        unsup_criterion = nn.KLDivLoss(reduction='none')
         data_iter = [data.sup_data_iter(), data.unsup_data_iter()] if cfg.mode=='train' \
             else [data.sup_data_iter(), data.unsup_data_iter(), data.eval_data_iter()]  # train_eval
     else:
         data_iter = [data.sup_data_iter()]
-    # sup_criterion = nn.CrossEntropyLoss(reduction='none')
-    sup_criterion = nn.CrossEntropyLoss()
+    sup_criterion = nn.CrossEntropyLoss(reduction='none')
     
     # Load Model
     model = models.Classifier(model_cfg, len(data.TaskDataset.labels))
@@ -100,8 +87,7 @@ def main(cfg, model_cfg):
             tsa_thresh = get_tsa_thresh(cfg.tsa, global_step, cfg.total_steps, start=1./logits.shape[-1], end=1)
             larger_than_threshold = torch.exp(-sup_loss) > tsa_thresh   # prob = exp(log_prob), prob > tsa_threshold
             # larger_than_threshold = torch.sum(  F.softmax(pred[:sup_size]) * torch.eye(num_labels)[sup_label_ids]  , dim=-1) > tsa_threshold
-            # loss_mask = torch.ones_like(label_ids, dtype=torch.float32) * (1 - larger_than_threshold.type(torch.float32))
-            loss_mask = torch.ones_like(label_ids).float() * (1 - larger_than_threshold.type(torch.float32))
+            loss_mask = torch.ones_like(label_ids, dtype=torch.float32) * (1 - larger_than_threshold.type(torch.float32))
             sup_loss = torch.sum(sup_loss * loss_mask, dim=-1) / torch.max(torch.sum(loss_mask, dim=-1), torch_device_one())
         else:
             sup_loss = torch.mean(sup_loss)
@@ -172,5 +158,49 @@ def main(cfg, model_cfg):
 
 
 if __name__ == '__main__':
-    fire.Fire(main)
-    #main('config/uda.json', 'config/bert_base.json')
+    
+    parser = argparse.ArgumentParser(description = "UDA")
+    # == hyperparameters  == #
+    # Debug mode #
+    parser.add_argument('--debug',               type = ast.literal_eval, default = False,     
+                        dest = 'debug',
+                        help = 'True or False flag, input should be either True or False.')
+
+
+    ### data json file ###
+    parser.add_argument('--data',                default = "config/uda.json")
+    parser.add_argument('--model',               default = "config/bert_base.json")
+
+    # optimizer #
+    parser.add_argument('--learning_rate',       type = float, default = 1e-3)
+    parser.add_argument('--optim_momentum_value',type = float, default = 0.9)
+    parser.add_argument('--weight_decay',        type = float, default = 1e-8)
+
+
+    # Training #
+    parser.add_argument('--num_threads',         type = int,   default = 1) ## multi-process in cpu ##
+
+    parser.add_argument('--cuda',                type = ast.literal_eval, default = False,     
+                    dest = 'cuda',
+                    help = 'True or False flag, Cuda or not') ## having no cuda T_T ##
+
+
+    # load epoch #
+    # Saving part #
+    parser.add_argument('--load_epoch',   type = str, default = 1,   metavar = "LE",
+                        help='number of epoch to be loaded')
+
+    parser.add_argument('-load_step',     type = str, default = 200, metavar = "LS",
+                        help='number of step to be loaded')
+
+    parser.add_argument('--resume',       type = ast.literal_eval,   default = False,     
+                        dest = 'resume',
+                        help = "True or False flag, resume or not" )
+
+    parser.add_argument('--weights_path', type = str, default = "./weights/",
+                        help='path to save weights')
+
+
+    args = parser.parse_args()
+
+    main(args)

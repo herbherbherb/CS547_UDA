@@ -23,6 +23,7 @@ import csv
 import itertools
 
 import pandas as pd    # only import when no need_to_preprocessing
+from tqdm import tqdm
 
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -44,21 +45,20 @@ class CsvDataset(Dataset):
 
                 # supervised dataset
                 if d_type == 'sup':
-                    if mode == 'eval':
-                        sentences = []
+                    # if mode == 'eval':
+                        # sentences = []
                     data = []
 
                     for instance in self.get_sup(lines):
-                        if mode == 'eval':
-                            sentences.append([instance[1]])
+                        # if mode == 'eval':
+                            # sentences.append([instance[1]])
                         for proc in pipeline:
                             instance = proc(instance, d_type)
                         data.append(instance)
 
-                    # self.tensors = [torch.tensor(x, dtype=torch.long) for x in zip(*data)]
-                    self.tensors = [torch.LongTensor(x) for x in zip(*data)]
-                    if mode == 'eval':
-                        self.tensors.append(sentences)
+                    self.tensors = [torch.tensor(x, dtype=torch.long) for x in zip(*data)]
+                    # if mode == 'eval':
+                        # self.tensors.append(sentences)
 
                 # unsupervised dataset
                 elif d_type == 'unsup':
@@ -68,15 +68,12 @@ class CsvDataset(Dataset):
                             ori = proc(ori, d_type)
                             aug = proc(aug, d_type)
                         self.cnt += 1
-                        if self.cnt == 10:
-                            break
+                        # if self.cnt == 10:
+                            # break
                         data['ori'].append(ori)    # drop label_id
                         data['aug'].append(aug)    # drop label_id
-                    # ori_tensor = [torch.tensor(x, dtype=torch.long) for x in zip(*data['ori'])]
-                    # aug_tensor = [torch.tensor(x, dtype=torch.long) for x in zip(*data['aug'])]
-
-                    ori_tensor = [torch.LongTensor(x) for x in zip(*data['ori'])]
-                    aug_tensor = [torch.LongTensor(x) for x in zip(*data['aug'])]
+                    ori_tensor = [torch.tensor(x, dtype=torch.long) for x in zip(*data['ori'])]
+                    aug_tensor = [torch.tensor(x, dtype=torch.long) for x in zip(*data['aug'])]
                     self.tensors = ori_tensor + aug_tensor
         # already preprocessed
         else:
@@ -87,23 +84,15 @@ class CsvDataset(Dataset):
             if d_type == 'sup':
                 # input_ids, segment_ids(input_type_ids), input_mask, input_label
                 input_columns = ['input_ids', 'input_type_ids', 'input_mask', 'label_ids']
-                # self.tensors = [torch.tensor(data[c] \
-                #     .apply(lambda x: ast.literal_eval(x)), dtype=torch.long) for c in input_columns[:-1]]
-
-                self.tensors = [torch.LongTensor(data[c] \
-                    .apply(lambda x: ast.literal_eval(x))) for c in input_columns[:-1]]
-
-                # self.tensors.append(torch.tensor(data[input_columns[-1]], dtype=torch.long))
-                self.tensors.append(torch.LongTensor(data[input_columns[-1]].tolist()))
+                self.tensors = [torch.tensor(data[c].apply(lambda x: ast.literal_eval(x)), dtype=torch.long)    \
+                                                                                for c in input_columns[:-1]]
+                self.tensors.append(torch.tensor(data[input_columns[-1]], dtype=torch.long))
                 
             # unsupervised dataset
             elif d_type == 'unsup':
                 input_columns = ['ori_input_ids', 'ori_input_type_ids', 'ori_input_mask',
                                  'aug_input_ids', 'aug_input_type_ids', 'aug_input_mask']
-                # self.tensors = [torch.tensor(data[c].apply(lambda x: ast.literal_eval(x)), dtype=torch.long)    \
-                #                                                                 for c in input_columns]
-
-                self.tensors = [torch.LongTensor(data[c].apply(lambda x: ast.literal_eval(x)))    \
+                self.tensors = [torch.tensor(data[c].apply(lambda x: ast.literal_eval(x)), dtype=torch.long)    \
                                                                                 for c in input_columns]
                 
             else:

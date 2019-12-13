@@ -1,30 +1,14 @@
-# Copyright 2019 SanghunYun, Korea University.
-# (Strongly inspired by Dong-Hyun Lee, Kakao Brain)
-# 
-# Except load and save function, the whole codes of file has been modified and added by
-# SanghunYun, Korea University for UDA.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-# 
-#     http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 import os
 import json
+import tensorflow as tf
+import numpy as np
 from copy import deepcopy
+from typing import NamedTuple
 from tqdm import tqdm
 
 import torch
 import torch.nn as nn
 
-from utils import checkpoint
 # from utils.logger import Logger
 from tensorboardX import SummaryWriter
 from utils.utils import output_logging
@@ -159,7 +143,7 @@ class Trainer(object):
         return results
             
     def load(self, model_file, pretrain_file):
-        """ between model_file and pretrain_file, only one model will be loaded """
+
         if model_file:
             print('Loading the model from', model_file)
             if torch.cuda.is_available():
@@ -169,15 +153,64 @@ class Trainer(object):
 
         elif pretrain_file:
             print('Loading the pretrained model from', pretrain_file)
-            if pretrain_file.endswith('.ckpt'):  # checkpoint file in tensorflow
-                checkpoint.load_model(self.model.transformer, pretrain_file)
-            elif pretrain_file.endswith('.pt'):  # pretrain model file in pytorch
-                self.model.transformer.load_state_dict(
-                    {key[12:]: value
-                        for key, value in torch.load(pretrain_file).items()
-                        if key.startswith('transformer')}
-                )   # load only transformer parts
+            self.load_model(self.model, pretrain_file)
+            print('Loading is done !')
+   
     
+    def load_model(self,model, checkpoint_file):
+        ### Only load pretrained model in tensorflow ###
+        def load_param(checkpoint_file, conversion_table):
+            for pyt_param, tf_param_name in conversion_table.items():
+                tf_param = tf.train.load_variable(checkpoint_file, tf_param_name)
+
+                # for weight(kernel), we should do transpose --> pytorch, tensorflow 다름
+                if tf_param_name.endswith('kernel'):
+                    tf_param = np.transpose(tf_param)
+
+                assert pyt_param.size() == tf_param.shape, \
+                    'Dim Mismatch: %s vs %s ; %s' % (tuple(pyt_param.size()), tf_param.shape, tf_param_name)
+
+                # assign pytorch tensor from tensorflow param
+                pyt_param.data = torch.from_numpy(tf_param)
+
+        
+
+        ### Embedding layer ###
+        e, p = model, 'bert/embeddings/'
+        load_param(checkpoint_file, {
+            e.tok_embed.weight: p+'word_embeddings',
+            e.pos_embed.weight: p+'position_embeddings',
+            e.seg_embed.weight: p+'token_type_embeddings',
+            e.norm.gamma:       p+'LayerNorm/gamma',
+            e.norm.beta:        p+'LayerNorm/beta'
+        })
+
+        ### Transformer blocks ###
+        for i in range(len(model.blocks)):
+            b, p = model.blocks[i], "bert/encoder/layer_%d/"%i
+            load_param(checkpoint_file, {
+                b.attn.proj_q.weight:   p+"attention/self/query/kernel",
+                b.attn.proj_q.bias:     p+"attention/self/query/bias",
+                b.attn.proj_k.weight:   p+"attention/self/key/kernel",
+                b.attn.proj_k.bias:     p+"attention/self/key/bias",
+                b.attn.proj_v.weight:   p+"attention/self/value/kernel",
+                b.attn.proj_v.bias:     p+"attention/self/value/bias",
+                b.proj.weight:          p+"attention/output/dense/kernel",
+                b.proj.bias:            p+"attention/output/dense/bias",
+                b.fc1.weight:           p+"intermediate/dense/kernel",
+                b.fc1.bias:             p+"intermediate/dense/bias",
+                b.fc2.weight:           p+"output/dense/kernel",
+                b.fc2.bias:             p+"output/dense/bias",
+                b.norm1.gamma:          p+"attention/output/LayerNorm/gamma",
+                b.norm1.beta:           p+"attention/output/LayerNorm/beta",
+                b.norm2.gamma:          p+"output/LayerNorm/gamma",
+                b.norm2.beta:           p+"output/LayerNorm/beta",
+            })
+
+
+
+
+
     def save(self, i):
         """ save model """
         if not os.path.isdir(os.path.join(self.cfg.results_dir, 'save')):
