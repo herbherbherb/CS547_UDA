@@ -151,7 +151,13 @@ if __name__ == '__main__':
     # Debug mode #
     parser.add_argument('--debug',               type = ast.literal_eval, default = True,     
                         dest = 'debug',
-                        help = 'True or False flag, input should be either True or False.')
+                        help = 'True or False flag for debug mode, input should be either True or False.')
+
+    parser.add_argument('--need_prepro',         type = ast.literal_eval, default = False,     
+                        dest = 'need_prepro',
+                        help = 'True or False flag for preprocess, input should be either True or False.')
+
+
 
 
     ### data json file ###

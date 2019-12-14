@@ -1,23 +1,3 @@
-# Copyright 2019 SanghunYun, Korea University.
-# (Strongly inspired by Dong-Hyun Lee, Kakao Brain)
-# 
-# This file has been modified by SanghunYun, Korea Univeristy.
-# Little modification at Tokenizing, AddSpecialTokensWithTruncation, TokenIndexing
-# and CsvDataset, load_data has been newly written.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-# 
-#     http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-
 import ast
 import csv
 import itertools
@@ -30,11 +10,9 @@ from torch.utils.data import Dataset, DataLoader
 
 from utils import tokenization
 from utils.utils import truncate_tokens_pair
-
-
 class CsvDataset(Dataset):
     labels = None
-    def __init__(self, file, need_prepro, pipeline, max_len, mode, d_type):
+    def __init__(self, file, need_prepro, pipeline, max_len, mode, d_type,cfg,args):
         Dataset.__init__(self)
         self.cnt = 0
 
@@ -52,9 +30,20 @@ class CsvDataset(Dataset):
                     for instance in self.get_sup(lines):
                         # if mode == 'eval':
                             # sentences.append([instance[1]])
-                        for proc in pipeline:
-                            instance = proc(instance, d_type)
-                        data.append(instance)
+
+                        if args.need_prepro:
+                            tokenizer = tokenization.FullTokenizer(vocab_file=cfg.vocab, 
+                                                                   do_lower_case=cfg.do_lower_case)
+
+                            pipline = pre_pipeline(tokenizer.convert_to_unicode, 
+                                                   tokenizer.tokenize,
+                                                   tokenizer.convert_tokens_to_ids, 
+                                                   labels,
+                                                   cfg.max_seq_length)
+                            instance = pipline(instance,d_type)
+
+                            data.append(instance)
+
 
                     self.tensors = [torch.tensor(x, dtype=torch.long) for x in zip(*data)]
                     # if mode == 'eval':
@@ -110,37 +99,32 @@ class CsvDataset(Dataset):
     def get_unsup(self, lines):
         raise NotImplementedError
 
-
-class Pipeline():
-    def __init__(self):
-        super().__init__()
-
-    def __call__(self, instance):
-        raise NotImplementedError
-
-
-class Tokenizing(Pipeline):
-    def __init__(self, preprocessor, tokenize):
+class pre_pipeline():
+    def __init__(self,preprocessor,tokenize,indexer,labels,max_len=512):
         super().__init__()
         self.preprocessor = preprocessor
         self.tokenize = tokenize
+        self.max_len = max_len
 
-    def __call__(self, instance, d_type):
+
+        self.indexer = indexer # function : tokens to indexes
+        # map from a label name to a label index
+        self.label_map = {name: i for i, name in enumerate(labels)}
+        self.max_len = max_len
+
+    def __call__(self, instance,d_type):
+
+        ### Tokenizing ###
         label, text_a, text_b = instance
         
         label = self.preprocessor(label) if label else None
         tokens_a = self.tokenize(self.preprocessor(text_a))
         tokens_b = self.tokenize(self.preprocessor(text_b)) if text_b else []
 
-        return (label, tokens_a, tokens_b)
+        instance = (label, tokens_a, tokens_b)
 
 
-class AddSpecialTokensWithTruncation(Pipeline):
-    def __init__(self, max_len=512):
-        super().__init__()
-        self.max_len = max_len
-    
-    def __call__(self, instance, d_type):
+        ### AddSpecialTokensWithTruncation ###
         label, tokens_a, tokens_b = instance
 
         # -3 special tokens for [CLS] text_a [SEP] text_b [SEP]
@@ -152,18 +136,8 @@ class AddSpecialTokensWithTruncation(Pipeline):
         tokens_a = ['[CLS]'] + tokens_a + ['[SEP]']
         tokens_b = tokens_b + ['[SEP]'] if tokens_b else []
 
-        return (label, tokens_a, tokens_b)
+        ### TokenIndexing ###
 
-
-class TokenIndexing(Pipeline):
-    def __init__(self, indexer, labels, max_len=512):
-        super().__init__()
-        self.indexer = indexer # function : tokens to indexes
-        # map from a label name to a label index
-        self.label_map = {name: i for i, name in enumerate(labels)}
-        self.max_len = max_len
-
-    def __call__(self, instance, d_type):
         label, tokens_a, tokens_b = instance
 
         input_ids = self.indexer(tokens_a + tokens_b)
@@ -182,7 +156,6 @@ class TokenIndexing(Pipeline):
         else:
             return (input_ids, segment_ids, input_mask)
 
-
 def dataset_class(args):
     table = {'imdb': IMDB,
              'dbp':DBP,
@@ -196,8 +169,8 @@ def dataset_class(args):
 ### 5 different types of dataset ###
 class IMDB(CsvDataset):
     labels = ('0', '1')
-    def __init__(self, file, need_prepro, pipeline=[], max_len=128, mode='train', d_type='sup'):
-        super().__init__(file, need_prepro, pipeline, max_len, mode, d_type)
+    def __init__(self, file, need_prepro, pipeline=[], max_len=128, mode='train', d_type='sup',cfg=None,args=None):
+        super().__init__(file, need_prepro, pipeline, max_len, mode, d_type,cfg,args)
 
     def get_sup(self, lines):
         for line in itertools.islice(lines, 0, None):
@@ -210,8 +183,8 @@ class IMDB(CsvDataset):
 
 class DBP(CsvDataset):
     labels = ('0', '1','2','3','4','5','6','7','8','9','10','11','12','13')
-    def __init__(self, file, need_prepro, pipeline=[], max_len=128, mode='train', d_type='sup'):
-        super().__init__(file, need_prepro, pipeline, max_len, mode, d_type)
+    def __init__(self, file, need_prepro, pipeline=[], max_len=128, mode='train', d_type='sup',cfg=None,args=None):
+        super().__init__(file, need_prepro, pipeline, max_len, mode, d_type,cfg,args)
 
     def get_sup(self, lines):
         for line in itertools.islice(lines, 0, None):
@@ -224,8 +197,8 @@ class DBP(CsvDataset):
 
 class Yelp_5(CsvDataset):
     labels = ('0', '1','2','3','4')
-    def __init__(self, file, need_prepro, pipeline=[], max_len=128, mode='train', d_type='sup'):
-        super().__init__(file, need_prepro, pipeline, max_len, mode, d_type)
+    def __init__(self, file, need_prepro, pipeline=[], max_len=128, mode='train', d_type='sup',cfg=None,args=None):
+        super().__init__(file, need_prepro, pipeline, max_len, mode, d_type,cfg,args)
 
     def get_sup(self, lines):
         for line in itertools.islice(lines, 0, None):
@@ -238,8 +211,8 @@ class Yelp_5(CsvDataset):
 
 class Amazon_2(CsvDataset):
     labels = ('0', '1')
-    def __init__(self, file, need_prepro, pipeline=[], max_len=128, mode='train', d_type='sup'):
-        super().__init__(file, need_prepro, pipeline, max_len, mode, d_type)
+    def __init__(self, file, need_prepro, pipeline=[], max_len=128, mode='train', d_type='sup',cfg=None,args=None):
+        super().__init__(file, need_prepro, pipeline, max_len, mode, d_type,cfg,args)
 
     def get_sup(self, lines):
         for line in itertools.islice(lines, 0, None):
@@ -252,8 +225,8 @@ class Amazon_2(CsvDataset):
 
 class Yelp_2(CsvDataset):
     labels = ('0', '1')
-    def __init__(self, file, need_prepro, pipeline=[], max_len=128, mode='train', d_type='sup'):
-        super().__init__(file, need_prepro, pipeline, max_len, mode, d_type)
+    def __init__(self, file, need_prepro, pipeline=[], max_len=128, mode='train', d_type='sup',cfg=None,args=None):
+        super().__init__(file, need_prepro, pipeline, max_len, mode, d_type,cfg,args)
 
     def get_sup(self, lines):
         for line in itertools.islice(lines, 0, None):
@@ -266,8 +239,8 @@ class Yelp_2(CsvDataset):
 
 class Amazon_5(CsvDataset):
     labels = ('0', '1','2','3','4')
-    def __init__(self, file, need_prepro, pipeline=[], max_len=128, mode='train', d_type='sup'):
-        super().__init__(file, need_prepro, pipeline, max_len, mode, d_type)
+    def __init__(self, file, need_prepro, pipeline=[], max_len=128, mode='train', d_type='sup',cfg=None,args=None):
+        super().__init__(file, need_prepro, pipeline, max_len, mode, d_type,cfg,args)
 
     def get_sup(self, lines):
         for line in itertools.islice(lines, 0, None):
@@ -311,19 +284,19 @@ class load_data:
             self.unsup_batch_size = cfg.train_batch_size * cfg.unsup_ratio
 
     def sup_data_iter(self):
-        sup_dataset = self.TaskDataset(self.sup_data_dir, self.cfg.need_prepro, self.pipeline, self.cfg.max_seq_length, self.cfg.mode, 'sup')
+        sup_dataset = self.TaskDataset(self.sup_data_dir, self.cfg.need_prepro, self.pipeline, self.cfg.max_seq_length, self.cfg.mode, 'sup', self.cfg,self.args)
         sup_data_iter = DataLoader(sup_dataset, batch_size=self.sup_batch_size, shuffle=self.shuffle)
         
         return sup_data_iter
 
     def unsup_data_iter(self):
-        unsup_dataset = self.TaskDataset(self.unsup_data_dir, self.cfg.need_prepro, self.pipeline, self.cfg.max_seq_length, self.cfg.mode, 'unsup')
+        unsup_dataset = self.TaskDataset(self.unsup_data_dir, self.cfg.need_prepro, self.pipeline, self.cfg.max_seq_length, self.cfg.mode, 'unsup',self.cfg,self.args)
         unsup_data_iter = DataLoader(unsup_dataset, batch_size=self.unsup_batch_size, shuffle=self.shuffle)
 
         return unsup_data_iter
 
     def eval_data_iter(self):
-        eval_dataset = self.TaskDataset(self.eval_data_dir, self.cfg.need_prepro, self.pipeline, self.cfg.max_seq_length, 'eval', 'sup')
+        eval_dataset = self.TaskDataset(self.eval_data_dir, self.cfg.need_prepro, self.pipeline, self.cfg.max_seq_length, 'eval', 'sup',self.cfg,self.args)
         eval_data_iter = DataLoader(eval_dataset, batch_size=self.eval_batch_size, shuffle=False)
 
         return eval_data_iter
