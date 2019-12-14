@@ -1,17 +1,3 @@
-# Copyright 2019 SanghunYun, Korea University.
-# 
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-# 
-#     http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 import ast
 import torch
 import torch.nn as nn
@@ -19,7 +5,9 @@ import torch.nn.functional as F
 
 import models
 import train
-from load_data import load_data
+# from load_data import load_data
+from dataloader import load_data
+
 from utils.utils import set_seeds, get_device, _get_device, torch_device_one
 from utils import optim, configuration
 import argparse
@@ -47,7 +35,7 @@ def main(args):
     set_seeds(cfg.seed)
 
     # Load Data & Create Criterion
-    data = load_data(cfg)
+    data = load_data(cfg,args)
     if cfg.uda_mode:
         unsup_criterion = nn.KLDivLoss(reduction='none')
         data_iter = [data.sup_data_iter(), data.unsup_data_iter()] if cfg.mode=='train' \
@@ -58,12 +46,11 @@ def main(args):
     
     # Load Model
     model = models.Classifier(model_cfg, len(data.TaskDataset.labels))
-
     # Create trainer
-    trainer = train.Trainer(cfg, model, data_iter, optim.optim4GPU(cfg, model), get_device())
+    trainer = train.Trainer(cfg, model, data_iter, optim.optim4GPU(cfg, model), get_device(),args)
 
     # Training
-    def get_loss(model, sup_batch, unsup_batch, global_step):
+    def get_loss(model, sup_batch, unsup_batch, global_step,args):
 
         # logits -> prob(softmax) -> log_prob(log_softmax)
 
@@ -84,7 +71,7 @@ def main(args):
         sup_size = label_ids.shape[0]            
         sup_loss = sup_criterion(logits[:sup_size], label_ids)  # shape : train_batch_size
         if cfg.tsa:
-            tsa_thresh = get_tsa_thresh(cfg.tsa, global_step, cfg.total_steps, start=1./logits.shape[-1], end=1)
+            tsa_thresh = get_tsa_thresh(cfg.tsa, global_step, cfg.total_steps, start=1./logits.shape[-1], end=args.end_num)
             larger_than_threshold = torch.exp(-sup_loss) > tsa_thresh   # prob = exp(log_prob), prob > tsa_threshold
             # larger_than_threshold = torch.sum(  F.softmax(pred[:sup_size]) * torch.eye(num_labels)[sup_label_ids]  , dim=-1) > tsa_threshold
             loss_mask = torch.ones_like(label_ids, dtype=torch.float32) * (1 - larger_than_threshold.type(torch.float32))
@@ -162,7 +149,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description = "UDA")
     # == hyperparameters  == #
     # Debug mode #
-    parser.add_argument('--debug',               type = ast.literal_eval, default = False,     
+    parser.add_argument('--debug',               type = ast.literal_eval, default = True,     
                         dest = 'debug',
                         help = 'True or False flag, input should be either True or False.')
 
@@ -180,6 +167,20 @@ if __name__ == '__main__':
     # Training #
     parser.add_argument('--num_threads',         type = int,   default = 1) ## multi-process in cpu ##
 
+
+
+    parser.add_argument('--epoch',               type = int,   default = 10000)
+    parser.add_argument('--end_num',             type = int,   default = 1,
+                    help = 'End label of this dataset, default is 1 for MDP dataset')
+
+    parser.add_argument('--train_batch_size',    type = int,   default = 8,
+                    help = 'batch_size of training')
+
+    parser.add_argument('--eval_batch_size',     type = int,   default = 16,
+                    help = 'batch_size of evaluation')
+
+
+
     parser.add_argument('--cuda',                type = ast.literal_eval, default = False,     
                     dest = 'cuda',
                     help = 'True or False flag, Cuda or not') ## having no cuda T_T ##
@@ -187,17 +188,22 @@ if __name__ == '__main__':
 
     # load epoch #
     # Saving part #
-    parser.add_argument('--load_epoch',   type = str, default = 1,   metavar = "LE",
+    parser.add_argument('--load_epoch',          type = str, default = 1,      metavar = "LE",
                         help='number of epoch to be loaded')
 
-    parser.add_argument('-load_step',     type = str, default = 200, metavar = "LS",
+    parser.add_argument('--load_step',           type = str, default = 200,    metavar = "LS",
                         help='number of step to be loaded')
 
-    parser.add_argument('--resume',       type = ast.literal_eval,   default = False,     
+
+    ### Task ###
+    parser.add_argument('--task',                type = str, default = 'imdb', metavar = "LS",
+                        help='number of step to be loaded')
+
+    parser.add_argument('--resume',              type = ast.literal_eval,   default = False,     
                         dest = 'resume',
                         help = "True or False flag, resume or not" )
 
-    parser.add_argument('--weights_path', type = str, default = "./weights/",
+    parser.add_argument('--weights_path',        type = str, default = "./weights/",
                         help='path to save weights')
 
 

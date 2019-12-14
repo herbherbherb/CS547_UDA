@@ -1,6 +1,7 @@
 import os
 import json
 import tensorflow as tf
+
 import numpy as np
 from copy import deepcopy
 from typing import NamedTuple
@@ -16,7 +17,8 @@ from utils.utils import output_logging
 
 class Trainer(object):
     """Training Helper class"""
-    def __init__(self, cfg, model, data_iter, optimizer, device):
+    def __init__(self, cfg, model, data_iter, optimizer, device,args):
+        self.args = args
         self.cfg = cfg
         self.model = model
         self.optimizer = optimizer
@@ -53,8 +55,12 @@ class Trainer(object):
         # Progress bar is set by unsup or sup data
         # uda_mode == True --> sup_iter is repeated
         # uda_mode == False --> sup_iter is not repeated
-        iter_bar = tqdm(self.unsup_iter, total=self.cfg.total_steps) if self.cfg.uda_mode \
-              else tqdm(self.sup_iter, total=self.cfg.total_steps)
+        if self.args.debug:
+            self.args.total_steps = 1
+            print('^ ^ You are in Debug mode ^ ^')
+
+        iter_bar = tqdm(self.unsup_iter, total=self.args.total_steps) if self.cfg.uda_mode \
+              else tqdm(self.sup_iter, total=self.args.total_steps)
         for i, batch in enumerate(iter_bar):
                 
             # Device assignment
@@ -67,7 +73,7 @@ class Trainer(object):
 
             # update
             self.optimizer.zero_grad()
-            final_loss, sup_loss, unsup_loss = get_loss(model, sup_batch, unsup_batch, global_step)
+            final_loss, sup_loss, unsup_loss = get_loss(model, sup_batch, unsup_batch, global_step,self.args)
             final_loss.backward()
             self.optimizer.step()
 
@@ -156,7 +162,7 @@ class Trainer(object):
             self.load_model(self.model, pretrain_file)
             print('Loading is done !')
    
-    
+    ### Load Bert model ### 
     def load_model(self,model, checkpoint_file):
         ### Only load pretrained model in tensorflow ###
         def load_param(checkpoint_file, conversion_table):

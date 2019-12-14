@@ -55,7 +55,6 @@ class params(NamedTuple):
     tsa: str = 'linear_schedule'           # log, linear, exp
     uda_softmax_temp: float = -1        # 0 ~ 1
     uda_confidence_thresh: float = -1   # 0 ~ 1
-
     # data
     data_parallel: bool = True
     need_prepro: bool = False           # is data already preprocessed?
