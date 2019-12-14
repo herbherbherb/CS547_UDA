@@ -23,6 +23,7 @@ from tqdm import tqdm
 
 import torch
 import torch.nn as nn
+from torch.autograd import Variable
 
 from utils import checkpoint
 # from utils.logger import Logger
@@ -58,7 +59,9 @@ class Trainer(object):
 
         self.model.train()
         self.load(model_file, pretrain_file)    # between model_file and pretrain_file, only one model will be loaded
-        model = self.model.to(self.device)
+        # model = self.model.to(self.device)
+        model = self.model.cuda()
+        # model = Variable(self.model).cuda()
         if self.cfg.data_parallel:                       # Parallel GPU mode
             model = nn.DataParallel(model)
 
@@ -75,10 +78,10 @@ class Trainer(object):
                 
             # Device assignment
             if self.cfg.uda_mode:
-                sup_batch = [t.to(self.device) for t in next(self.sup_iter)]
-                unsup_batch = [t.to(self.device) for t in batch]
+                sup_batch = [t.cuda() for t in next(self.sup_iter)]
+                unsup_batch = [t.cuda() for t in batch]
             else:
-                sup_batch = [t.to(self.device) for t in batch]
+                sup_batch = [t.cuda() for t in batch]
                 unsup_batch = None
 
             # update
@@ -111,7 +114,8 @@ class Trainer(object):
             if global_step % self.cfg.save_steps == 0:
                 self.save(global_step)
 
-            if get_acc and global_step % self.cfg.check_steps == 0 and global_step > 4999:
+            # if get_acc and global_step % self.cfg.check_steps == 0 and global_step > 1999:
+            if get_acc and global_step % self.cfg.check_steps == 0 and global_step > 2:
                 results = self.eval(get_acc, None, model)
                 total_accuracy = torch.cat(results).mean().item()
                 logger.add_scalars('data/scalar_group', {'eval_acc' : total_accuracy}, global_step)
@@ -141,7 +145,7 @@ class Trainer(object):
         if model_file:
             self.model.eval()
             self.load(model_file, None)
-            model = self.model.to(self.device)
+            model = self.model.cuda()
             if self.cfg.data_parallel:
                 model = nn.DataParallel(model)
 
@@ -149,7 +153,7 @@ class Trainer(object):
         iter_bar = tqdm(self.sup_iter) if model_file \
             else tqdm(deepcopy(self.eval_iter))
         for batch in iter_bar:
-            batch = [t.to(self.device) for t in batch]
+            batch = [t.cuda() for t in batch]
 
             with torch.no_grad():
                 accuracy, result = evaluate(model, batch)

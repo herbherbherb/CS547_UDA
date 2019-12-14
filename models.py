@@ -18,14 +18,16 @@
 
 import math
 import json
+from typing import NamedTuple
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.autograd import Variable
+
 
 from utils.utils import split_last, merge_last
-
 
 class Config():
 	"Configuration for BERT model"
@@ -53,7 +55,7 @@ def gelu(x):
 class LayerNorm(nn.Module):
 	"A layernorm module in the TF style (epsilon inside the square root)."
 	def __init__(self, cfg, variance_epsilon=1e-12):
-		super().__init__()
+		super(LayerNorm, self).__init__()
 		self.gamma = nn.Parameter(torch.ones(cfg.dim))
 		self.beta  = nn.Parameter(torch.zeros(cfg.dim))
 		self.variance_epsilon = variance_epsilon
@@ -68,7 +70,7 @@ class LayerNorm(nn.Module):
 class Embeddings(nn.Module):
 	"The embedding module from word, position and token_type embeddings."
 	def __init__(self, cfg):
-		super().__init__()
+		super(Embeddings, self).__init__()
 		self.tok_embed = nn.Embedding(cfg.vocab_size, cfg.dim) # token embedding
 		self.pos_embed = nn.Embedding(cfg.max_len, cfg.dim) # position embedding
 		self.seg_embed = nn.Embedding(cfg.n_segments, cfg.dim) # segment(token type) embedding
@@ -78,17 +80,24 @@ class Embeddings(nn.Module):
 
 	def forward(self, x, seg):
 		seq_len = x.size(1)
-		pos = torch.arange(seq_len, dtype=torch.long, device=x.device)
-		pos = pos.unsqueeze(0).expand_as(x) 
-
-		e = self.tok_embed(x) + self.pos_embed(pos) + self.seg_embed(seg)
+		# pos = torch.arange(seq_len, dtype=torch.long, device=x.device)
+		# pos = torch.arange(seq_len, device=x.device).float()
+		pos = Variable(torch.arange(seq_len).long())
+		pos = pos.cuda()
+		pos = pos.unsqueeze(0).expand_as(x)
+		x = Variable(x)
+		seg = Variable(seg)
+		te = self.tok_embed(x)
+		pe = self.pos_embed(pos)
+		se = self.seg_embed(seg)
+		e = te + pe + se
 		return self.drop(self.norm(e))
 
 
 class MultiHeadedSelfAttention(nn.Module):
 	""" Multi-Headed Dot Product Attention """
 	def __init__(self, cfg):
-		super().__init__()
+		super(MultiHeadedSelfAttention, self).__init__()
 		self.proj_q = nn.Linear(cfg.dim, cfg.dim)
 		self.proj_k = nn.Linear(cfg.dim, cfg.dim)
 		self.proj_v = nn.Linear(cfg.dim, cfg.dim)
@@ -114,7 +123,7 @@ class MultiHeadedSelfAttention(nn.Module):
 class PositionWiseFeedForward(nn.Module):
 	""" FeedForward Neural Networks for each position """
 	def __init__(self, cfg):
-		super().__init__()
+		super(PositionWiseFeedForward, self).__init__()
 		self.fc1 = nn.Linear(cfg.dim, cfg.dim_ff)
 		self.fc2 = nn.Linear(cfg.dim_ff, cfg.dim)
 		#self.activ = lambda x: activ_fn(cfg.activ_fn, x)
@@ -127,7 +136,7 @@ class PositionWiseFeedForward(nn.Module):
 class Block(nn.Module):
 	""" Transformer Block """
 	def __init__(self, cfg):
-		super().__init__()
+		super(Block, self).__init__()
 		self.attn = MultiHeadedSelfAttention(cfg)
 		self.proj = nn.Linear(cfg.dim, cfg.dim)
 		self.norm1 = LayerNorm(cfg)
@@ -145,7 +154,7 @@ class Block(nn.Module):
 class Transformer(nn.Module):
 	""" Transformer with Self-Attentive Blocks"""
 	def __init__(self, cfg):
-		super().__init__()
+		super(Transformer, self).__init__()
 		self.embed = Embeddings(cfg)
 		self.blocks = nn.ModuleList([Block(cfg) for _ in range(cfg.n_layers)])   
 
@@ -159,7 +168,7 @@ class Transformer(nn.Module):
 class Classifier(nn.Module):
 	""" Classifier with Transformer """
 	def __init__(self, cfg, n_labels):
-		super().__init__()
+		super(Classifier, self).__init__()
 		self.transformer = Transformer(cfg)
 		self.fc = nn.Linear(cfg.dim, cfg.dim)
 		self.activ = nn.Tanh()
@@ -168,15 +177,16 @@ class Classifier(nn.Module):
 
 	def forward(self, input_ids, segment_ids, input_mask):
 		h = self.transformer(input_ids, segment_ids, input_mask)
-		# only use the first h in the sequence
-		pooled_h = self.activ(self.fc(h[:, 0])) 
+		pooled_h = self.activ(self.fc(h[:, 0]))
+		# pooled_h = self.activ(self.fc(Variable(h[:, 0])))
 		logits = self.classifier(self.drop(pooled_h))
+		# logits = self.classifier(self.drop(Variable(pooled_h)))
 		return logits
 
 class Opinion_extract(nn.Module):
 	""" Opinion_extraction """
 	def __init__(self, cfg, max_len, n_labels):
-		super().__init__()
+		super(Opinion_extract, self).__init__()
 		self.transformer = Transformer(cfg)
 		self.fc = nn.Linear(cfg.dim, cfg.dim)
 		self.activ = nn.Tanh()

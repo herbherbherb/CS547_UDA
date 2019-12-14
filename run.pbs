@@ -1,6 +1,6 @@
 #!/bin/bash
 #PBS -l nodes=01:ppn=16:xk
-#PBS -l walltime=00:10:00
+#PBS -l walltime=03:00:00
 #PBS -N UDA_pytorch
 #PBS -e $PBS_JOBID.err
 #PBS -o $PBS_JOBID.out
@@ -8,11 +8,12 @@
 
 cd /u/training/tra265/bin/UDA_pytorch
 . /opt/modules/default/init/bash
+module load python/2.0.1
 module load bwpy
 #module load cudatoolkit
-pip uninstall fire --yes
-EPYTHON="python3.6" pip3 install --user fire==0.2.1 --yes
-EPYTHON="python3.6" pip3 install --user numpy --yes
+EPYTHON="python3.6" pip3 install --user fire
+EPYTHON="python3.6" pip3 install --user torch==0.4.1.post2 --yes
+EPYTHON="python3.6" pip3 install --user numpy==1.16 --yes
 EPYTHON="python3.6" pip3 install --user tensorflow tqdm tensorboardX
 EPYTHON="python3.6" python --version
 aprun -n 1 -N 1 python3.6 main.py --cfg="config/uda.json" --model_cfg="config/bert_base.json"

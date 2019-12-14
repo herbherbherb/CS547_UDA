@@ -34,7 +34,8 @@ def load_param(checkpoint_file, conversion_table):
             'Dim Mismatch: %s vs %s ; %s' % (tuple(pyt_param.size()), tf_param.shape, tf_param_name)
 
         # assign pytorch tensor from tensorflow param
-        pyt_param.data = torch.from_numpy(tf_param)
+        # pyt_param.data = torch.from_numpy(tf_param)
+        pyt_param.data = torch.FloatTensor(tf_param.tolist())
 
 
 def load_model(model, checkpoint_file):

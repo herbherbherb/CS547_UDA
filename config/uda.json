@@ -6,7 +6,7 @@
 	"mode": "train_eval",
 	"uda_mode": true,
 
-	"total_steps": 10000,
+	"total_steps": 1000,
 	"max_seq_length": 128,
 	"train_batch_size": 8,
 	"eval_batch_size": 16,
@@ -17,7 +17,7 @@
 	"uda_softmax_temp": 0.85,
 	"uda_confidence_thresh": 0.45,
 
-	"data_parallel": true,
+	"data_parallel": false,
 	"need_prepro": false,
 	"sup_data_dir": "data/imdb_sup_train.txt",
 	"unsup_data_dir": "data/imdb_unsup_train.txt",
